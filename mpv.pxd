@@ -127,7 +127,7 @@ cdef class Context(object):
     cdef _shutdown_callbackthread(self)
     cdef _shutdown_callback(self)
 
-cdef class RenderContext(object):
+cdef class RenderContext:
     cdef object __weakref__
     cdef mpv_render_context *_glctx
     cdef readonly object _ctx

@@ -451,8 +451,8 @@ cdef inline mpv_node empty_node():
     return ret
 
 cdef dict _opts         = dict()
-cdef list _dir          = list()
 cdef dict _props        = dict()
+cdef list _dir          = list()
 cdef set _properties    = set()
 cdef set _options       = set()
 
@@ -777,7 +777,7 @@ cdef class Context(object):
         return Error(err)
 
     def __getattr__(self,oname):
-        name = oname
+        name = oname.replace('_','-')
         if name in self._props:
             return self.get_property(self._props[name])
         elif name in self._opts:
@@ -803,7 +803,8 @@ cdef class Context(object):
                     raise
         raise AttributeError
 
-    def __setattr__(self,name,value):
+    def __setattr__(self,oname,value):
+        name = oname.replace('_','-')
         if name in self._props:
             self.set_property(self._props[name],value)
         elif name in self._opts:
@@ -1075,8 +1076,8 @@ cdef class Context(object):
             _options.update(self.options)
             _dir.extend(self._dir)
         else:
-            self._opts      = _opts.copy()
-            self._props     = _props.copy()
+            self._opts      = _opts
+            self._props     = _props
             self.properties = _properties.copy()
             self.options    = _options.copy()
             self._dir       = _dir.copy()
@@ -1314,7 +1315,7 @@ cdef class Context(object):
             else:
                 self.cb_context = None
 
-cdef class RenderContext(object):
+cdef class RenderContext:
     def __cinit__(self):
         self._glctx = NULL
         self._ctx   = None
@@ -1472,7 +1473,7 @@ cdef class RenderContext(object):
             with nogil:
                 mpv_render_context_set_update_callback(self._glctx, &_c_callback, NULL)
 
-    def draw(self, int fbo, int w, int h):
+    def draw(self, int fbo, int w, int h, int internal_format= 0):
         if not self._glctx:
             return
         cdef int err
@@ -1481,6 +1482,7 @@ cdef class RenderContext(object):
         _fbo.fbo = fbo
         _fbo.w   = abs(w)
         _fbo.h   = abs(h)
+        _fbo.internal_format = internal_format
         _params[0].type = MPV_RENDER_PARAM_OPENGL_FBO
         _params[0].data = &_fbo
         cdef int flip_y = 1 if h < 0 else 0
