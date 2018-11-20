@@ -1299,10 +1299,10 @@ cdef class Context(object):
         self._shutdown_callback()
         self.detach()
 
-    def create_render_context(self, get_proc_address_cb = None, exts = None):
+    def create_render_context(self, get_proc_address_cb = None, exts = None, advanced = False):
         res = RenderContext.create(self)
         if get_proc_address_cb:
-            res.init_gl(get_proc_address_cb, exts)
+            res.init_gl(get_proc_address_cb, exts, advanced)
         return res
 
     @property
@@ -1372,7 +1372,8 @@ cdef class RenderContext:
     def initialized(self):
         return self._glctx != NULL
 
-    def init_gl(self, get_proc_address_cb, str exts = None):
+    def init_gl(self, get_proc_address_cb, str exts = None, advanced = False):
+        self.advanced = advanced
         if get_proc_address_cb is None:
             return
 
@@ -1387,7 +1388,7 @@ cdef class RenderContext:
         prev = _callbacks.get(name,None)
         _callbacks[name] = get_proc_address_cb
         cdef int ret = MPV_ERROR_UNINITIALIZED
-        cdef mpv_render_param params[3]
+        cdef mpv_render_param params[4]
         cdef mpv_opengl_init_params gl_params
         gl_params.get_proc_address = &_c_getprocaddress
         gl_params.get_proc_address_ctx = <void*>name
@@ -1397,8 +1398,13 @@ cdef class RenderContext:
         params[0].data = <void*>MPV_RENDER_API_TYPE_OPENGL
         params[1].type = MPV_RENDER_PARAM_OPENGL_INIT_PARAMS
         params[1].data = <void*>&gl_params
-        params[2].type = MPV_RENDER_PARAM_INVALID
-        params[2].data = NULL
+
+        cdef int advanced_params = 1 if advanced else 0
+        params[2].type = MPV_RENDER_PARAM_ADVANCED_CONTROL
+        params[2].data = <void*>&advanced_params
+
+        params[3].type = MPV_RENDER_PARAM_INVALID
+        params[3].data = NULL
 
         cdef mpv_render_param *paramsp = params
         cdef Context ctx = self.ctx
@@ -1407,7 +1413,6 @@ cdef class RenderContext:
             _ctx = ctx._ctx
             with nogil:
                 ret = mpv_render_context_create(&self._glctx, _ctx, paramsp)
-#            ret = mpv_opengl_cb_init_gl(self._glctx, extsp, &_c_getprocaddress, <void*>name)
         if prev is not None:
             _callbacks[name] = prev
         else:
@@ -1415,6 +1420,24 @@ cdef class RenderContext:
 
         if ret < 0:
             raise MPVError(ret)
+
+    cdef int _update(self) nogil:
+        cdef mpv_render_context *_glctx = self._glctx
+        if not _glctx:
+            return 0
+#        with nogil:
+        cdef uint64_t res = mpv_render_context_update(_glctx)
+        return 1 if (res & MPV_RENDER_UPDATE_FRAME) else 0
+
+    def update(self):
+
+        cdef mpv_render_context *_glctx = self._glctx
+        if not _glctx:
+            return False
+        cdef int64_t res = 0
+        with nogil:
+            res = mpv_render_context_update(_glctx)
+        return bool(res&<int64_t>MPV_RENDER_UPDATE_FRAME)
 
     def set_update_callback(self, callback):
         """Wraps: mpv_set_wakeup_callback"""

@@ -133,9 +133,10 @@ cdef class RenderContext:
     cdef readonly object _ctx
     cdef readonly object callback
     cdef readonly object callbackthread
-
+    cdef readonly object advanced
     @staticmethod
     cdef RenderContext create(Context ctx)
 
     cdef _shutdown_callbackthread(self)
     cdef _shutdown_callback(self)
+    cdef int _update(self) nogil
