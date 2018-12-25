@@ -149,6 +149,45 @@ cdef extern from "mpv/render_gl.h" nogil:
      #/
         int internal_format
 
+    cdef struct _drmModeAtomicReq:
+        pass
+
+    ctypedef struct mpv_opengl_drm_params:
+        ##*
+        # DRM fd (int). Set to a negative number if invalid.
+        #/
+        int fd;
+        ##*
+        # Currently used crtc id
+        #/
+        int crtc_id;
+
+        ##*
+        # Currently used connector id
+        #/
+        int connector_id;
+
+        ##*
+        # Pointer to a drmModeAtomicReq pointer that is being used for the renderloop.
+        # This pointer should hold a pointer to the atomic request pointer
+        # The atomic request pointer is usually changed at every renderloop.
+        #/
+        _drmModeAtomicReq **atomic_request_ptr;
+
+        ##*
+        # DRM render node. Used for VAAPI interop.
+        # Set to a negative number if invalid.
+        #/
+        int render_fd;
+
+    ctypedef struct mpv_opengl_drm_osd_size:
+        ##*
+        # size of the OSD in pixels.
+        #/
+        int width
+        int height
+
+
 #ifdef __cplusplus
 #}
 #endif
