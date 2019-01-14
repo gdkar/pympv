@@ -41,7 +41,6 @@ from client cimport *
 from stream_cb cimport *
 from render cimport *
 from render_gl cimport *
-from talloc cimport *
 
 cimport cython
 
@@ -67,7 +66,7 @@ cdef extern from "Python.h":
     void PyEval_InitThreads()
 
 cdef bint   _is_py3 = sys.version_info >= (3,)
-cdef object _strdec_err = "surrogateescape" if _is_py3 else "strict"
+cdef str _strdec_err = "surrogateescape" if _is_py3 else "strict"
 # mpv -> Python
 cdef _strdec(s):
     try:
@@ -557,39 +556,46 @@ cdef class Context(object):
         elif isinstance(value, dict):           return MPV_FORMAT_NODE_MAP
         else:                                   return MPV_FORMAT_NONE
 
-    cdef mpv_node_list* _prep_node_list(self, values, void *ctx = NULL):
+    cdef mpv_node_list* _prep_node_list(self, values, list ctx ):
         cdef mpv_node node = empty_node()
         cdef mpv_format fmt = MPV_FORMAT_NONE
-        cdef mpv_node_list* node_list = <mpv_node_list*>talloc_zero_size(ctx,sizeof(mpv_node_list))
+        cdef bytearray cpa = bytearray(sizeof(mpv_node_list))
+        ctx.append(cpa)
+        cdef mpv_node_list* node_list = <mpv_node_list*><char*>cpa;
         node_list.num    = len(values)
         if node_list.num:
-            node_list.values = <mpv_node*>talloc_array_size(node_list, sizeof(mpv_node),node_list.num)
+            cpa = bytearray(sizeof(mpv_node)*node_list.num)
+            ctx.append(cpa)
+            node_list.values = <mpv_node*><char*>cpa;
             for i, value in enumerate(values):
-                node                = self._prep_native_value(value, node_list)
+                node                = self._prep_native_value(value, ctx)
                 node_list.values[i] = node
         return node_list
 
-    cdef mpv_node_list* _prep_node_map(self,  _map, void *ctx = NULL):
-        cdef char* ckey           = NULL
+    cdef mpv_node_list* _prep_node_map(self,  _map, list ctx ):
+        cdef bytes  key
         cdef mpv_node_list* _list = self._prep_node_list(_map.values(), ctx)
         keys = _map.keys()
         if not len(keys):
             return _list
-        _list.keys = <char**>talloc_array_size(_list, sizeof(char*),_list.num)
+        cdef bytearray cpa = bytearray(sizeof(char*)*_list.num)
+        ctx.append(cpa)
+        _list.keys = <char**><char*>cpa;
         for i, key in enumerate(keys):
-            key = _strenc(key)
-            ckey = key
-            _list.keys[i] = <char*>talloc_memdup(_list, ckey, len(key) + 1)
+            key = _strenc(key) + b'\0'
+            ctx.append(key)
+            _list.keys[i] = <char*>key
         return _list
 
-    cdef mpv_node _prep_native_value_format(self, value, mpv_format fmt, void *ctx = NULL):
+    cdef mpv_node _prep_native_value_format(self, value, mpv_format fmt, list ctx ):
         cdef mpv_node node = empty_node()
         node.format = fmt
         cdef const char *_value = NULL
+        cdef bytes bvalue
         if fmt == MPV_FORMAT_STRING:
-            value = _strenc(value)
-            _value = value
-            node.u.string = <char*>talloc_memdup(ctx, _value, len(value) + 1)
+            bvalue = _strenc(value) + b'\0'
+            ctx.append(bvalue)
+            node.u.string = bvalue
         elif fmt == MPV_FORMAT_FLAG:         node.u.flag = 1 if value else 0
         elif fmt == MPV_FORMAT_INT64:        node.u.int64 = value
         elif fmt == MPV_FORMAT_DOUBLE:       node.u.double_ = value
@@ -598,13 +604,9 @@ cdef class Context(object):
         else:                                node.format = MPV_FORMAT_NONE
         return node
 
-    cdef mpv_node _prep_native_value(self, value, void *ctx = NULL):
+    cdef mpv_node _prep_native_value(self, value, list ctx):
         return self._prep_native_value_format(value, self._format_for(value),ctx)
 
-    cdef _free_native_value(self, mpv_node node):
-        if node.format in (MPV_FORMAT_NODE_ARRAY, MPV_FORMAT_NODE_MAP, MPV_FORMAT_STRING):
-            talloc_free(node.u.list)
-        node.u.list = NULL
 
     def command_string(self, cmdlist):
 
@@ -640,7 +642,8 @@ cdef class Context(object):
         if self._ctx is NULL:
             raise MPVError(Error.uninitialized)
 
-        cdef mpv_node node = self._prep_native_value(cmdlist)
+        cdef list node_ctx = []
+        cdef mpv_node node = self._prep_native_value(cmdlist,node_ctx)
         cdef mpv_node noderesult = empty_node()
         cdef int err
         cdef uint64_t data_id
@@ -664,7 +667,8 @@ cdef class Context(object):
                 with nogil:
                     err = mpv_command_node_async(self._ctx, data_id, &node)
         finally:
-            self._free_native_value(node)
+            pass
+#            self._free_native_value(node)
         if err < 0:
             raise MPVError(err)
         return result
@@ -741,7 +745,8 @@ cdef class Context(object):
             raise MPVError(Error.uninitialized)
 
         prop = _strenc(prop)
-        cdef mpv_node v = self._prep_native_value(value)
+        cdef list v_ctx = []
+        cdef mpv_node v = self._prep_native_value(value,v_ctx)
         cdef int err
         cdef uint64_t data_id
         cdef const char* prop_c
@@ -772,7 +777,8 @@ cdef class Context(object):
                         &v
                     )
         finally:
-            self._free_native_value(v)
+            pass
+#            self._free_native_value(v)
 
         return Error(err)
 
@@ -833,7 +839,8 @@ cdef class Context(object):
             raise MPVError(Error.uninitialized)
 
         prop = _strenc(prop.replace('_','-'))
-        cdef mpv_node v = self._prep_native_value(value)
+        cdef list v_ctx = []
+        cdef mpv_node v = self._prep_native_value(value,v_ctx)
         cdef int err
         cdef const char* prop_c
         try:
@@ -846,7 +853,8 @@ cdef class Context(object):
                     &v
                 )
         finally:
-            self._free_native_value(v)
+            pass
+#            self._free_native_value(v)
         if err < 0:
                 raise MPVError(err, 'prop={}, value={}'.format(prop,value))
         return Error(err)

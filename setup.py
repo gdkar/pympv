@@ -22,6 +22,7 @@ from distutils.command.clean import clean
 from Cython.Distutils import build_ext
 from Cython.Build import cythonize
 import re
+
 def tryremove(filename):
     pth = pathlib.Path(filename).absolute()
     if not pth.exists() or not pth.is_file():
@@ -39,6 +40,7 @@ class Clean(clean):
         for f in self.side_effects:
             tryremove(f)
         clean.run(self)
+
 from Cython.Compiler.AutoDocTransforms import EmbedSignature
 
 old_embed_signature = EmbedSignature._embed_signature
@@ -68,7 +70,7 @@ setup(
         "build_ext": build_ext,
         "clean": Clean,
     },
-    ext_modules = cythonize([Extension("mpv", ["mpv.pyx"], libraries=['mpv','talloc'],language="c++")],compiler_directives={
+    ext_modules = cythonize([Extension("mpv", ["mpv.pyx"], libraries=['mpv'],language="c++")],compiler_directives={
         "embedsignature":True,
         "always_allow_keywords":False,
         "cdivision_warnings":False,
